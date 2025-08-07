@@ -1,0 +1,20 @@
+# WoW Addon Development
+*.lua.bak
+*.toc.bak
+.idea/
+.vscode/
+
+# Build artifacts
+Release/
+Packaged/
+*.zip
+
+# Saved Variables from the game
+WTF/
+Logs/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
