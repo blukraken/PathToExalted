@@ -1,0 +1,10 @@
+## Interface: 100207
+## Title: Path to Exalted
+## Notes: A comprehensive reputation and renown tracking addon.
+## Author: Pinno
+## Version: 0.1.0
+## SavedVariables: PathToExaltedDB
+## Dependencies: Blizzard_UIPanelTemplates
+
+PathToExalted.xml
+PathToExalted.lua
