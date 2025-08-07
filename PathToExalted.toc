@@ -1,10 +1,22 @@
-## Interface: 100207
+## Interface: 110200
 ## Title: Path to Exalted
-## Notes: A comprehensive reputation and renown tracking addon.
-## Author: Pinno
-## Version: 0.1.0
+## Notes: Warband-wide reputation tracker and goal planner
+## Version: 0.1
+## Author: Pinnocchio
 ## SavedVariables: PathToExaltedDB
-## Dependencies: Blizzard_UIPanelTemplates
 
-PathToExalted.xml
-PathToExalted.lua
+# Libraries
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
+libs\AceAddon-3.0\AceAddon-3.0.xml
+libs\AceConsole-3.0\AceConsole-3.0.xml
+libs\AceEvent-3.0\AceEvent-3.0.xml
+libs\AceDB-3.0\AceDB-3.0.xml
+libs\AceGUI-3.0\AceGUI-3.0.xml
+
+# Core Files
+core.lua
+events.lua
+data.lua
+reputation.lua
+ui.lua
