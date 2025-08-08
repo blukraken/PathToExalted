@@ -47,6 +47,8 @@ end
 
 local function HasRetailRepAPIs() return C_Reputation and C_MajorFactions end
 
+local function trim(s) return (s and s:match("^%s*(.-)%s*$")) or "" end
+
 -- Progress helpers
 local function entryIsMaxed(e)
   if e.type == "renown" then
@@ -144,12 +146,12 @@ function P2E:OnInitialize()
 
   -- Slash
   self:RegisterChatCommand("p2e", function(input)
-    input = (input or ""):trim():lower()
-    if input == "" or input == "show" then
-      self:Toggle()
-    elseif input == "scan" then
-      self:ScanReputations(true)
-    elseif input == "debug" then
+    local cmd = string.lower(trim(input or ""))
+    if cmd == "" or cmd == "show" then
+    self:Toggle()
+    elseif cmd == "scan" then
+    self:ScanReputations(true)
+    elseif cmd == "debug" then
       self.db.profile.debug = not self.db.profile.debug
       self:Print("Debug:", self.db.profile.debug and "ON" or "OFF")
     else
@@ -465,26 +467,35 @@ end
 local function applyFilters(filters, data)
   local out = {}
   for _, e in ipairs(data) do
-    -- Type filter
-    if filters.type == "Faction" and e.type ~= "faction" then goto continue end
-    if filters.type == "Renown" and e.type ~= "renown" then goto continue end
+    local pass = true
 
-    -- Status filter
-    if filters.status == "Maxed" and not entryIsMaxed(e) then goto continue end
-    if filters.status == "In Progress" and entryIsMaxed(e) then goto continue end
+    if filters.type == "Faction" and e.type ~= "faction" then
+      pass = false
+    elseif filters.type == "Renown" and e.type ~= "renown" then
+      pass = false
+    end
 
-    table.insert(out, e)
-    ::continue::
+    if pass then
+      if filters.status == "Maxed" and not entryIsMaxed(e) then
+        pass = false
+      elseif filters.status == "In Progress" and entryIsMaxed(e) then
+        pass = false
+      end
+    end
+
+    if pass then
+      table.insert(out, e)
+    end
   end
-  -- Sort
+
   if filters.sort == "Name" then
     table.sort(out, function(a,b) return (a.name or "") < (b.name or "") end)
-  else -- Progress
+  else
     table.sort(out, function(a,b)
       local ac, am = entryProgress(a)
       local bc, bm = entryProgress(b)
-      local ap = (am > 0) and (ac / am) or 0
-      local bp = (bm > 0) and (bc / bm) or 0
+      local ap = (am and am > 0) and (ac / am) or 0
+      local bp = (bm and bm > 0) and (bc / bm) or 0
       if ap == bp then
         return (a.name or "") < (b.name or "")
       else
@@ -492,6 +503,7 @@ local function applyFilters(filters, data)
       end
     end)
   end
+
   return out
 end
 
