@@ -8,4 +8,6 @@
 ## X-Embeds: Ace3, LibDataBroker-1.1, LibDBIcon-1.0
 embeds.xml
 
+reputation.lua
+ui.lua
 core.lua
