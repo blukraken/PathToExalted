@@ -1,6 +1,6 @@
 -- Path to Exalted (Ace3 + embedded Libs) - WoW 11.2
 -- Author: Cameron
--- Stable, loop-safe init for Phase 1 build-out
+-- Phase 1: Main window + scroll list + filters (Type/Status/Sort)
 
 local ADDON_NAME, ns = ...
 
@@ -46,15 +46,21 @@ local LDI = LibStub("LibDBIcon-1.0", true)
 ------------------------------------------------
 local defaults = {
     profile = {
-        window  = { x = 200, y = -200, w = 560, h = 520, shown = true, alpha = 1 },
+        window  = { x = 200, y = -200, w = 640, h = 520, shown = true, alpha = 1 },
         minimap = { hide = false },
         debug   = false,
         filters = { type="All", status="All", sort="Progress" },
     },
     global = {
-        reputations = {},
-        goals       = {},
+        reputations = {}, -- raw scan output (all)
     },
+}
+
+------------------------------------------------
+-- Local state (derived/filtered view)
+------------------------------------------------
+local VIEW = {
+    rows = {},   -- filtered/sorted rows for display
 }
 
 ------------------------------------------------
@@ -68,7 +74,7 @@ function P2E:OnInitialize()
         self.ldbObject = LDB:NewDataObject("PathToExalted", {
             type = "data source",
             text = "P2E",
-            icon = 134400,
+            icon = 134400, -- generic banner icon
             OnClick = function(_, btn)
                 if btn == "LeftButton" then self:Toggle() end
                 if btn == "RightButton" then InterfaceOptionsFrame_OpenToCategory("Path to Exalted") end
@@ -134,6 +140,7 @@ function P2E:OnInitialize()
             self:Toggle()
         elseif cmd == "scan" then
             self:ScanReputations(true)
+            self:RefreshView()
         elseif cmd == "debug" then
             self.db.profile.debug = not self.db.profile.debug
             self:Print("Debug:", self.db.profile.debug and "ON" or "OFF")
@@ -147,21 +154,39 @@ function P2E:OnEnable()
     self:RegisterEvent("PLAYER_LOGIN", "OnPlayerLogin")
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
     self:RegisterEvent("UPDATE_FACTION", "OnReputationChanged")
+
     if self.db.profile.window.shown then
         self:CreateMainWindow()
     end
     self:ScanReputations()
+    self:RefreshView()
 end
 
 ------------------------------------------------
 -- Event handlers
 ------------------------------------------------
-function P2E:OnPlayerLogin()          self:ScanReputations() end
-function P2E:OnPlayerEnteringWorld()  self:ScanReputations() end
-function P2E:OnReputationChanged()    self:ScanReputations() end
+function P2E:OnPlayerLogin()          self:ScanReputations(); self:RefreshView() end
+function P2E:OnPlayerEnteringWorld()  self:ScanReputations(); self:RefreshView() end
+function P2E:OnReputationChanged()    self:ScanReputations(); self:RefreshView() end
 
 ------------------------------------------------
--- UI
+-- UI helpers
+------------------------------------------------
+local ROW_HEIGHT = 22
+local MAX_ROWS   = 16  -- fits 520px tall with header/filters
+
+local function pct(cur, maxv)
+    cur = tonumber(cur) or 0
+    maxv = tonumber(maxv) or 0
+    if maxv <= 0 then return 0 end
+    local p = math.floor((cur / maxv) * 100 + 0.5)
+    if p < 0 then p = 0 end
+    if p > 100 then p = 100 end
+    return p
+end
+
+------------------------------------------------
+-- Main Window + Controls + Scroll List
 ------------------------------------------------
 function P2E:CreateMainWindow()
     if self.MainWindow then return end
@@ -179,6 +204,7 @@ function P2E:CreateMainWindow()
         cfg.x, cfg.y = x, y
     end)
     f:SetAlpha(cfg.alpha or 1)
+    f:SetClampedToScreen(true)
 
     f:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -195,13 +221,162 @@ function P2E:CreateMainWindow()
     close:SetPoint("TOPRIGHT", 2, 2)
     close:SetScript("OnClick", function() f:Hide(); self.db.profile.window.shown = false end)
 
-    local msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    msg:SetPoint("TOPLEFT", 16, -40)
-    msg:SetJustifyH("LEFT")
-    msg:SetText("Phase 1 scaffold loaded.\n/p2e to toggle, /p2e scan to refresh.")
+    -- Filters line
+    local filters = CreateFrame("Frame", nil, f)
+    filters:SetPoint("TOPLEFT", 12, -40)
+    filters:SetSize(cfg.w - 24, 26)
 
+    local function NewLabel(parent, text)
+        local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetText(text)
+        return fs
+    end
+
+    -- Type dropdown
+    local typeLabel = NewLabel(filters, "Type:")
+    typeLabel:SetPoint("LEFT", filters, "LEFT", 0, 0)
+
+    local typeDrop = CreateFrame("Frame", "P2E_TypeDropdown", filters, "UIDropDownMenuTemplate")
+    typeDrop:SetPoint("LEFT", typeLabel, "RIGHT", -6, -4)
+
+    -- Status dropdown
+    local statusLabel = NewLabel(filters, "Status:")
+    statusLabel:SetPoint("LEFT", typeDrop, "RIGHT", 80, 4)
+
+    local statusDrop = CreateFrame("Frame", "P2E_StatusDropdown", filters, "UIDropDownMenuTemplate")
+    statusDrop:SetPoint("LEFT", statusLabel, "RIGHT", -6, -4)
+
+    -- Sort dropdown
+    local sortLabel = NewLabel(filters, "Sort:")
+    sortLabel:SetPoint("LEFT", statusDrop, "RIGHT", 80, 4)
+
+    local sortDrop = CreateFrame("Frame", "P2E_SortDropdown", filters, "UIDropDownMenuTemplate")
+    sortDrop:SetPoint("LEFT", sortLabel, "RIGHT", -6, -4)
+
+    -- Scan button
+    local scanBtn = CreateFrame("Button", nil, filters, "UIPanelButtonTemplate")
+    scanBtn:SetText("Scan")
+    scanBtn:SetSize(80, 22)
+    scanBtn:SetPoint("RIGHT", filters, "RIGHT", 0, 0)
+    scanBtn:SetScript("OnClick", function()
+        self:ScanReputations(true)
+        self:RefreshView()
+    end)
+
+    -- Header row
+    local header = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    header:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -6)
+    header:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+    header:SetHeight(22)
+    header:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        tile = false, edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    header:SetBackdropColor(0,0,0,0.2)
+    header:SetBackdropBorderColor(0,0,0,0.4)
+
+    local function NewHeaderText(parent, text, w, point, xOff)
+        local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs:SetText(text)
+        fs:SetJustifyH("LEFT")
+        fs:SetPoint("LEFT", parent, point or "LEFT", xOff or 0, 0)
+        fs:SetWidth(w)
+        return fs
+    end
+
+    -- Column widths
+    local COLW_NAME   = 230
+    local COLW_TYPE   = 70
+    local COLW_LEVEL  = 110
+    local COLW_PROG   = 80
+    local COLW_EXTRA  = 100 -- renown cap / standing
+
+    local hName  = NewHeaderText(header, "Name",  COLW_NAME, "LEFT", 6)
+    local hType  = NewHeaderText(header, "Type",  COLW_TYPE, "LEFT", 12 + COLW_NAME)
+    local hLevel = NewHeaderText(header, "Level", COLW_LEVEL, "LEFT", 18 + COLW_NAME + COLW_TYPE)
+    local hProg  = NewHeaderText(header, "Progress", COLW_PROG, "LEFT", 24 + COLW_NAME + COLW_TYPE + COLW_LEVEL)
+    local hExtra = NewHeaderText(header, "Details", COLW_EXTRA, "LEFT", 30 + COLW_NAME + COLW_TYPE + COLW_LEVEL + COLW_PROG)
+
+    -- Scroll area
+    local scroll = CreateFrame("ScrollFrame", "P2E_ScrollFrame", f, "FauxScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
+    scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -28, 12)
+
+    -- Row factory
+    f.rows = {}
+    local function CreateRow(index)
+        local row = CreateFrame("Button", nil, f, "BackdropTemplate")
+        row:SetHeight(ROW_HEIGHT)
+        row:SetPoint("LEFT", f, "LEFT", 12, 0)
+        row:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+
+        if index == 1 then
+            row:SetPoint("TOP", scroll, "TOP", 0, 0)
+        else
+            row:SetPoint("TOP", f.rows[index-1], "BOTTOM", 0, -2)
+        end
+
+        row:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            tile = false, edgeSize = 1,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 }
+        })
+        row:SetBackdropColor(0,0,0,0.05)
+        row:SetBackdropBorderColor(0,0,0,0.12)
+
+        row.name  = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        row.type  = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.level = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.prog  = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.extra = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+
+        row.name:SetPoint("LEFT", row, "LEFT", 6, 0);                      row.name:SetWidth(COLW_NAME);  row.name:SetJustifyH("LEFT")
+        row.type:SetPoint("LEFT", row, "LEFT", 12 + COLW_NAME, 0);         row.type:SetWidth(COLW_TYPE);  row.type:SetJustifyH("LEFT")
+        row.level:SetPoint("LEFT", row, "LEFT", 18 + COLW_NAME + COLW_TYPE, 0); row.level:SetWidth(COLW_LEVEL); row.level:SetJustifyH("LEFT")
+        row.prog:SetPoint("LEFT", row, "LEFT", 24 + COLW_NAME + COLW_TYPE + COLW_LEVEL, 0); row.prog:SetWidth(COLW_PROG); row.prog:SetJustifyH("LEFT")
+        row.extra:SetPoint("LEFT", row, "LEFT", 30 + COLW_NAME + COLW_TYPE + COLW_LEVEL + COLW_PROG, 0); row.extra:SetWidth(COLW_EXTRA); row.extra:SetJustifyH("LEFT")
+
+        row:SetScript("OnEnter", function(selfR)
+            if not selfR._data then return end
+            GameTooltip:SetOwner(selfR, "ANCHOR_RIGHT")
+            local r = selfR._data
+            GameTooltip:AddLine(r.name or "")
+            if r.type == "renown" then
+                GameTooltip:AddLine(("Renown: %d / %d"):format(r.renownLevel or 0, r.renownCap or 0), 1,1,1)
+            else
+                GameTooltip:AddLine(("StandingID: %s  (%d / %d)"):format(tostring(r.standingID or "?"), r.current or 0, r.max or 0), 1,1,1)
+            end
+            if r.isWarband then GameTooltip:AddLine("Warband-wide", 0.6, 0.9, 1) else GameTooltip:AddLine("Character-specific", 1, 0.85, 0.4) end
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        return row
+    end
+
+    for i = 1, MAX_ROWS do
+        f.rows[i] = CreateRow(i)
+    end
+
+    -- Save refs
+    f.filters = { typeDrop = typeDrop, statusDrop = statusDrop, sortDrop = sortDrop }
+    f.scroll  = scroll
     self.MainWindow = f
+
+    -- Dropdown init
+    self:InitDropdowns()
+
+    -- Scroll update hook
+    scroll:SetScript("OnVerticalScroll", function(selfScroll, offset)
+        FauxScrollFrame_OnVerticalScroll(selfScroll, offset, ROW_HEIGHT + 2, function() P2E:RefreshRows() end)
+    end)
+
+    -- Initial paint
     self:TrySkinElvUI(f, close)
+    self:RefreshRows()
 end
 
 function P2E:Toggle()
@@ -271,8 +446,8 @@ function P2E:ScanReputations(verbose)
                     type = "faction",
                     name = name,
                     factionID = factionID,
-                    current = barValue - barMin,
-                    max     = barMax - barMin,
+                    current = (barValue or 0) - (barMin or 0),
+                    max     = (barMax or 0) - (barMin or 0),
                     standingID = standingID,
                     isWarband  = false,
                     characterGUID = guid,
@@ -284,4 +459,178 @@ function P2E:ScanReputations(verbose)
     self.db.global.reputations = out
     dprint(self, "Scan complete. Entries:", #out)
     if verbose then self:Print(("Scanned %d reputation entries."):format(#out)) end
+end
+
+------------------------------------------------
+-- Filtering / Sorting / View
+------------------------------------------------
+local TYPE_CHOICES   = { "All", "faction", "renown" }
+local STATUS_CHOICES = { "All", "In-Progress", "Maxed" }
+local SORT_CHOICES   = { "Progress", "Name" }
+
+local function isMaxed(row)
+    if row.type == "renown" then
+        return (row.renownCap or 0) > 0 and (row.renownLevel or 0) >= (row.renownCap or 0)
+    else
+        return (row.max or 0) > 0 and (row.current or 0) >= (row.max or 0)
+    end
+end
+
+function P2E:BuildFilteredRows()
+    local filters = self.db.profile.filters
+    local tFilter = filters.type or "All"
+    local sFilter = filters.status or "All"
+
+    wipe(VIEW.rows)
+    for _, r in ipairs(self.db.global.reputations or {}) do
+        if (tFilter == "All" or r.type == tFilter) then
+            local pass = true
+            if sFilter == "Maxed" then
+                pass = isMaxed(r)
+            elseif sFilter == "In-Progress" then
+                pass = not isMaxed(r)
+            end
+            if pass then
+                table.insert(VIEW.rows, r)
+            end
+        end
+    end
+
+    -- Sort
+    local sortBy = filters.sort or "Progress"
+    if sortBy == "Name" then
+        table.sort(VIEW.rows, function(a,b)
+            return (a.name or "") < (b.name or "")
+        end)
+    else
+        -- Progress descending
+        table.sort(VIEW.rows, function(a,b)
+            local ap, bp
+            if a.type == "renown" then ap = pct(a.renownLevel or 0, a.renownCap or 0) else ap = pct(a.current or 0, a.max or 0) end
+            if b.type == "renown" then bp = pct(b.renownLevel or 0, b.renownCap or 0) else bp = pct(b.current or 0, b.max or 0) end
+            if ap == bp then
+                return (a.name or "") < (b.name or "")
+            end
+            return ap > bp
+        end)
+    end
+end
+
+function P2E:RefreshView()
+    self:BuildFilteredRows()
+    self:RefreshRows()
+end
+
+function P2E:RefreshRows()
+    if not self.MainWindow then return end
+    local scroll = self.MainWindow.scroll
+    local total = #VIEW.rows
+
+    local offset = FauxScrollFrame_GetOffset(scroll) or 0
+    FauxScrollFrame_Update(scroll, total, MAX_ROWS, ROW_HEIGHT + 2)
+
+    for i = 1, MAX_ROWS do
+        local idx = i + offset
+        local row = self.MainWindow.rows[i]
+        local r = VIEW.rows[idx]
+
+        if r then
+            row._data = r
+            row:Show()
+
+            row.name:SetText(r.name or "?")
+            row.type:SetText(r.type == "renown" and "Renown" or "Faction")
+
+            if r.type == "renown" then
+                local cur, cap = r.renownLevel or 0, r.renownCap or 0
+                row.level:SetText(("%d / %d"):format(cur, cap))
+                row.prog:SetText(("%d%%"):format(pct(cur, cap)))
+                row.extra:SetText(r.isWarband and "Warband" or "")
+            else
+                local cur, maxv = r.current or 0, r.max or 0
+                row.level:SetText(("%d / %d"):format(cur, maxv))
+                row.prog:SetText(("%d%%"):format(pct(cur, maxv)))
+                row.extra:SetText(("Standing %s"):format(tostring(r.standingID or "?")))
+            end
+
+            -- subtle visual cue when maxed
+            if isMaxed(r) then
+                row:SetBackdropColor(0.08, 0.18, 0.08, 0.20)
+            else
+                row:SetBackdropColor(0,0,0,0.05)
+            end
+        else
+            row._data = nil
+            row:Hide()
+        end
+    end
+end
+
+------------------------------------------------
+-- Dropdowns
+------------------------------------------------
+local function _DD_SetText(drop, text)
+    -- Helper because UIDropDownMenu_SetText is protected in some templates
+    local fs = _G[drop:GetName().."Text"]
+    if fs then fs:SetText(text) end
+end
+
+function P2E:InitDropdowns()
+    if not self.MainWindow then return end
+    local f = self.MainWindow
+    local filters = self.db.profile.filters
+
+    -- Type
+    UIDropDownMenu_Initialize(f.filters.typeDrop, function(selfDD, level)
+        if level ~= 1 then return end
+        for _, v in ipairs(TYPE_CHOICES) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = v
+            info.func = function()
+                filters.type = v
+                _DD_SetText(f.filters.typeDrop, v)
+                P2E:RefreshView()
+            end
+            info.checked = (filters.type == v)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    UIDropDownMenu_SetWidth(f.filters.typeDrop, 110)
+    _DD_SetText(f.filters.typeDrop, filters.type or "All")
+
+    -- Status
+    UIDropDownMenu_Initialize(f.filters.statusDrop, function(selfDD, level)
+        if level ~= 1 then return end
+        for _, v in ipairs(STATUS_CHOICES) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = v
+            info.func = function()
+                filters.status = v
+                _DD_SetText(f.filters.statusDrop, v)
+                P2E:RefreshView()
+            end
+            info.checked = (filters.status == v)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    UIDropDownMenu_SetWidth(f.filters.statusDrop, 130)
+    _DD_SetText(f.filters.statusDrop, filters.status or "All")
+
+    -- Sort
+    UIDropDownMenu_Initialize(f.filters.sortDrop, function(selfDD, level)
+        if level ~= 1 then return end
+        for _, v in ipairs(SORT_CHOICES) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = v
+            info.func = function()
+                filters.sort = v
+                _DD_SetText(f.filters.sortDrop, v)
+                P2E:RefreshView()
+            end
+            info.checked = (filters.sort == v)
+            UIDropDownMenu_AddButton(info, level)
+        end
+    end)
+    UIDropDownMenu_SetWidth(f.filters.sortDrop, 120)
+    _DD_SetText(f.filters.sortDrop, filters.sort or "Progress")
 end
