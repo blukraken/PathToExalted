@@ -206,6 +206,12 @@ function P2E:CreateMainWindow()
     f:SetAlpha(cfg.alpha or 1)
     f:SetClampedToScreen(true)
 
+    -- Auto-scan whenever the window is shown (no manual Scan button)
+    f:SetScript("OnShow", function()
+        P2E:ScanReputations()
+        P2E:RefreshView()
+    end)
+
     f:SetBackdrop({
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -221,10 +227,13 @@ function P2E:CreateMainWindow()
     close:SetPoint("TOPRIGHT", 2, 2)
     close:SetScript("OnClick", function() f:Hide(); self.db.profile.window.shown = false end)
 
-    -- Filters line
+    ------------------------------------------------
+    -- Filters area (TWO ROWS)
+    ------------------------------------------------
     local filters = CreateFrame("Frame", nil, f)
     filters:SetPoint("TOPLEFT", 12, -40)
-    filters:SetSize(cfg.w - 24, 26)
+    filters:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -40)
+    filters:SetHeight(56) -- two rows (26 + 26) + tiny gap
 
     local function NewLabel(parent, text)
         local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -232,38 +241,45 @@ function P2E:CreateMainWindow()
         return fs
     end
 
-    -- Type dropdown
-    local typeLabel = NewLabel(filters, "Type:")
-    typeLabel:SetPoint("LEFT", filters, "LEFT", 0, 0)
+    -- Row 1: Type + Status
+    local row1 = CreateFrame("Frame", nil, filters)
+    row1:SetPoint("TOPLEFT", filters, "TOPLEFT", 0, 0)
+    row1:SetPoint("TOPRIGHT", filters, "TOPRIGHT", 0, 0)
+    row1:SetHeight(26)
 
-    local typeDrop = CreateFrame("Frame", "P2E_TypeDropdown", filters, "UIDropDownMenuTemplate")
+    local typeLabel = NewLabel(row1, "Type:")
+    typeLabel:SetPoint("LEFT", row1, "LEFT", 0, 0)
+
+    local typeDrop = CreateFrame("Frame", "P2E_TypeDropdown", row1, "UIDropDownMenuTemplate")
     typeDrop:SetPoint("LEFT", typeLabel, "RIGHT", -6, -4)
+    UIDropDownMenu_SetWidth(typeDrop, 120)
 
-    -- Status dropdown
-    local statusLabel = NewLabel(filters, "Status:")
-    statusLabel:SetPoint("LEFT", typeDrop, "RIGHT", 80, 4)
+    local statusLabel = NewLabel(row1, "Status:")
+    statusLabel:SetPoint("LEFT", typeDrop, "RIGHT", 20, 4)
 
-    local statusDrop = CreateFrame("Frame", "P2E_StatusDropdown", filters, "UIDropDownMenuTemplate")
+    local statusDrop = CreateFrame("Frame", "P2E_StatusDropdown", row1, "UIDropDownMenuTemplate")
     statusDrop:SetPoint("LEFT", statusLabel, "RIGHT", -6, -4)
+    UIDropDownMenu_SetWidth(statusDrop, 140)
 
-    -- Sort dropdown
-    local sortLabel = NewLabel(filters, "Sort:")
-    sortLabel:SetPoint("LEFT", statusDrop, "RIGHT", 80, 4)
+    -- Row 2: Sort (left-aligned; room to grow)
+    local row2 = CreateFrame("Frame", nil, filters)
+    row2:SetPoint("TOPLEFT", row1, "BOTTOMLEFT", 0, -4)
+    row2:SetPoint("TOPRIGHT", row1, "BOTTOMRIGHT", 0, -4)
+    row2:SetHeight(26)
 
-    local sortDrop = CreateFrame("Frame", "P2E_SortDropdown", filters, "UIDropDownMenuTemplate")
+    local sortLabel = NewLabel(row2, "Sort:")
+    sortLabel:SetPoint("LEFT", row2, "LEFT", 0, 0)
+
+    local sortDrop = CreateFrame("Frame", "P2E_SortDropdown", row2, "UIDropDownMenuTemplate")
     sortDrop:SetPoint("LEFT", sortLabel, "RIGHT", -6, -4)
+    UIDropDownMenu_SetWidth(sortDrop, 140)
 
-    -- Scan button
-    local scanBtn = CreateFrame("Button", nil, filters, "UIPanelButtonTemplate")
-    scanBtn:SetText("Scan")
-    scanBtn:SetSize(80, 22)
-    scanBtn:SetPoint("RIGHT", filters, "RIGHT", 0, 0)
-    scanBtn:SetScript("OnClick", function()
-        self:ScanReputations(true)
-        self:RefreshView()
-    end)
+    -- Save refs for InitDropdowns()
+    f.filters = { typeDrop = typeDrop, statusDrop = statusDrop, sortDrop = sortDrop }
 
+    ------------------------------------------------
     -- Header row
+    ------------------------------------------------
     local header = CreateFrame("Frame", nil, f, "BackdropTemplate")
     header:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -6)
     header:SetPoint("RIGHT", f, "RIGHT", -12, 0)
@@ -299,7 +315,9 @@ function P2E:CreateMainWindow()
     local hProg  = NewHeaderText(header, "Progress", COLW_PROG, "LEFT", 24 + COLW_NAME + COLW_TYPE + COLW_LEVEL)
     local hExtra = NewHeaderText(header, "Details", COLW_EXTRA, "LEFT", 30 + COLW_NAME + COLW_TYPE + COLW_LEVEL + COLW_PROG)
 
+    ------------------------------------------------
     -- Scroll area
+    ------------------------------------------------
     local scroll = CreateFrame("ScrollFrame", "P2E_ScrollFrame", f, "FauxScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
     scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -28, 12)
@@ -362,7 +380,6 @@ function P2E:CreateMainWindow()
     end
 
     -- Save refs
-    f.filters = { typeDrop = typeDrop, statusDrop = statusDrop, sortDrop = sortDrop }
     f.scroll  = scroll
     self.MainWindow = f
 
@@ -380,10 +397,20 @@ function P2E:CreateMainWindow()
 end
 
 function P2E:Toggle()
-    if not self.MainWindow then self:CreateMainWindow() end
+    if not self.MainWindow then
+        self:CreateMainWindow()
+        self.MainWindow:Show()
+        self.db.profile.window.shown = true
+        return
+    end
+
     local shown = self.MainWindow:IsShown()
     self.db.profile.window.shown = not shown
-    if shown then self.MainWindow:Hide() else self.MainWindow:Show() end
+    if shown then
+        self.MainWindow:Hide()
+    else
+        self.MainWindow:Show()
+    end
 end
 
 function P2E:TrySkinElvUI(frame, close)
@@ -583,7 +610,7 @@ function P2E:InitDropdowns()
     -- Type
     UIDropDownMenu_Initialize(f.filters.typeDrop, function(selfDD, level)
         if level ~= 1 then return end
-        for _, v in ipairs(TYPE_CHOICES) do
+        for _, v in ipairs({ "All", "faction", "renown" }) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = v
             info.func = function()
@@ -595,13 +622,13 @@ function P2E:InitDropdowns()
             UIDropDownMenu_AddButton(info, level)
         end
     end)
-    UIDropDownMenu_SetWidth(f.filters.typeDrop, 110)
+    UIDropDownMenu_SetWidth(f.filters.typeDrop, 120)
     _DD_SetText(f.filters.typeDrop, filters.type or "All")
 
     -- Status
     UIDropDownMenu_Initialize(f.filters.statusDrop, function(selfDD, level)
         if level ~= 1 then return end
-        for _, v in ipairs(STATUS_CHOICES) do
+        for _, v in ipairs({ "All", "In-Progress", "Maxed" }) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = v
             info.func = function()
@@ -613,13 +640,13 @@ function P2E:InitDropdowns()
             UIDropDownMenu_AddButton(info, level)
         end
     end)
-    UIDropDownMenu_SetWidth(f.filters.statusDrop, 130)
+    UIDropDownMenu_SetWidth(f.filters.statusDrop, 140)
     _DD_SetText(f.filters.statusDrop, filters.status or "All")
 
     -- Sort
     UIDropDownMenu_Initialize(f.filters.sortDrop, function(selfDD, level)
         if level ~= 1 then return end
-        for _, v in ipairs(SORT_CHOICES) do
+        for _, v in ipairs({ "Progress", "Name" }) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = v
             info.func = function()
@@ -631,6 +658,6 @@ function P2E:InitDropdowns()
             UIDropDownMenu_AddButton(info, level)
         end
     end)
-    UIDropDownMenu_SetWidth(f.filters.sortDrop, 120)
+    UIDropDownMenu_SetWidth(f.filters.sortDrop, 140)
     _DD_SetText(f.filters.sortDrop, filters.sort or "Progress")
 end
