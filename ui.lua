@@ -639,16 +639,6 @@ function UI.ShowGoalPanel(self, row)
         gp.renownValue:SetPoint("LEFT", gp.renownSlider, "RIGHT", 10, 0)
         gp.renownValue:SetText("")
 
-        -- Low label
-        gp.lowText = gp:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        gp.lowText:SetText("Low")
-        gp.lowText:SetPoint("TOPLEFT", gp.renownSlider, "BOTTOMLEFT", 0, -2)
-
-        -- High label
-        gp.highText = gp:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        gp.highText:SetText("High")
-        gp.highText:SetPoint("TOPRIGHT", gp.renownSlider, "BOTTOMRIGHT", 0, -2)
-
         gp.standingDrop = CreateFrame("Frame", "P2E_TargetStanding", gp, "UIDropDownMenuTemplate")
         gp.standingDrop:SetPoint("TOPLEFT", gp.targetLabel, "BOTTOMLEFT", 0, -6)
         gp.standingDrop:Hide()
@@ -801,8 +791,6 @@ function UI.ShowGoalPanel(self, row)
         -- Faction (standing) UI — Blizzard dropdown, instant save/clear
         gp.renownSlider:Hide()
         gp.renownValue:SetText("")
-        if gp.lowText then gp.lowText:Hide() end
-        if gp.highText then gp.highText:Hide() end
 
         gp.curText:SetText(("Current: %d / %d (Standing %s)"):format(row.current or 0, row.max or 0, tostring(row.standingID or "?")))
 
