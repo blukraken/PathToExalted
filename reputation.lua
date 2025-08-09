@@ -50,12 +50,20 @@ function Data.ScanAll(db, dprint)
                 majorSet[id] = true
                 local info = C_MajorFactions.GetMajorFactionData and C_MajorFactions.GetMajorFactionData(id)
                 if info then
+                    local cap = info.renownLevelCap or 0
+                    if cap <= 0 or cap < (info.renownLevel or 0) then
+                        local levels = C_MajorFactions.GetRenownLevels and C_MajorFactions.GetRenownLevels(id)
+                        if type(levels) == "table" and #levels > 0 then
+                            local last = levels[#levels]
+                            cap = (type(last) == "table" and last.renownLevel) or cap
+                        end
+                    end
                     table.insert(out, {
                         type = "renown",
                         name = info.name,
                         factionID = id,
                         renownLevel = info.renownLevel or 0,
-                        renownCap  = info.renownLevelCap or info.renownLevel or 0,
+                        renownCap  = cap > 0 and cap or (info.renownLevel or 0),
                         isWarband  = true,
                     })
                 end
