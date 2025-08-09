@@ -149,7 +149,7 @@ local function collectWQTasksStrict(row)
 
     local tasks, seen = {}, {}
     for _, mapID in ipairs(maps) do
-        -- Prefer the newer API (11.0.5+), fall back to legacy on older builds
+        -- Prefer modern API; fall back if needed
         local entries = safe(C_TaskQuest.GetQuestsOnMap, mapID)
         if not entries then
             entries = safe(C_TaskQuest.GetQuestsForPlayerByMapID, mapID)
@@ -158,24 +158,27 @@ local function collectWQTasksStrict(row)
         if type(entries) == "table" then
             for i = 1, #entries do
                 local q   = entries[i]
-                local qid = q and (q.questID or q.questId) -- be lenient about field name
+                local qid = q and (q.questID or q.questId)
 
-                if qid and not seen[qid] then
+                -- Basic sanity for POI on this map
+                local px  = q and q.x
+                local py  = q and q.y
+                local hasPoi = (type(px) == "number" and type(py) == "number" and px >= 0 and px <= 1 and py >= 0 and py <= 1)
+
+                if qid and hasPoi and not seen[qid] then
                     seen[qid] = true
 
-                    -- Only include quests that are currently active for the player.
-                    -- Some APIs (like GetQuestsForPlayerByMapID) return every quest
-                    -- that could appear on the map, so we need to explicitly check
-                    -- for active status/time left.
-                    local isActive  = safe(C_TaskQuest.IsActive, qid)
-                    local timeLeft  = safe(C_TaskQuest.GetQuestTimeLeftMinutes, qid)
-                    local active = (isActive == nil or isActive) and (not timeLeft or timeLeft > 0)
+                    -- *** Strict ACTIVE filters ***
+                    local isWQ      = safe(C_QuestLog.IsWorldQuest, qid) == true
+                    local isActive  = safe(C_TaskQuest.IsActive, qid) == true      -- require TRUE
+                    local tLeft     = safe(C_TaskQuest.GetQuestTimeLeftMinutes, qid)
+                    local hasTime   = (tLeft == nil) or (tLeft and tLeft > 0)       -- some WQs have no timer
 
-                    if active then
+                    if isWQ and isActive and hasTime then
                         local t = makeTask(qid, mapID, true)
 
-                        -- Hard filter: zone name must include one of the home patterns
-                        local z = strlower(t.zone)
+                        -- Keep only mapped home‑zone results
+                        local z = strlower(t.zone or "")
                         local ok = false
                         for pat in pairs(zoneWhitelists) do
                             if z:find(pat, 1, true) then ok = true; break end
@@ -189,6 +192,8 @@ local function collectWQTasksStrict(row)
             end
         end
     end
+
+
 
 
     table.sort(tasks, function(a,b)
