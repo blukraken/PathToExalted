@@ -139,6 +139,16 @@ function P2E:OnEnable()
     self:RegisterEvent("PLAYER_LOGIN",          "OnPlayerLogin")
     self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnPlayerEnteringWorld")
     self:RegisterEvent("UPDATE_FACTION",        "OnReputationChanged")
+    -- Auto-refresh tasks when moving between zones or when world quests update
+        -- Auto-refresh tasks when moving between zones or when quest/map POIs change
+    self:RegisterEvent("ZONE_CHANGED",           "OnZoneOrTasksChanged")
+    self:RegisterEvent("ZONE_CHANGED_INDOORS",   "OnZoneOrTasksChanged")
+    self:RegisterEvent("ZONE_CHANGED_NEW_AREA",  "OnZoneOrTasksChanged")
+
+    -- Quest/POI updates that impact world-quest availability/titles
+    self:RegisterEvent("QUEST_LOG_UPDATE",       "OnZoneOrTasksChanged")   -- very frequent; safe to debounce
+    self:RegisterEvent("AREA_POIS_UPDATED",      "OnZoneOrTasksChanged")   -- map POIs (incl. WQ pins) changed
+
 
     if self.db.profile.window.shown then
         self:CreateMainWindow()
@@ -162,4 +172,24 @@ function P2E:Toggle()
     local shown = self.MainWindow:IsShown()
     self.db.profile.window.shown = not shown
     if shown then self.MainWindow:Hide() else self.MainWindow:Show() end
+end
+
+-- Debounced refresh so we don't spam on rapid zone flickers
+function P2E:_DebouncedTaskRefresh()
+    if self._taskRefreshTimer then
+        self._taskRefreshTimer:Cancel()
+    end
+    self._taskRefreshTimer = C_Timer.NewTimer(0.40, function()
+        -- Only bother if the goal panel is visible (that’s where tasks appear)
+        local f = self.MainWindow
+        local gp = f and f._goalPanel
+        if gp and gp:IsShown() then
+            -- No need to rescan reputations here; just rebuild the task list
+            ns.UI.RefreshGoalTasks(self)
+        end
+    end)
+end
+
+function P2E:OnZoneOrTasksChanged()
+    self:_DebouncedTaskRefresh()
 end

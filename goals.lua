@@ -148,23 +148,37 @@ local function collectWQTasksStrict(row)
     for _,p in ipairs(patterns) do zoneWhitelists[p]=true end
 
     local tasks, seen = {}, {}
-    for _,mapID in ipairs(maps) do
-        local entries = safe(C_TaskQuest.GetQuestsForPlayerByMapID, mapID)
-        if entries then
-            for i=1,#entries do
-                local q = entries[i]; local qid = q and q.questID
+    for _, mapID in ipairs(maps) do
+        -- Prefer the newer API (11.0.5+), fall back to legacy on older builds
+        local entries = safe(C_TaskQuest.GetQuestsOnMap, mapID)
+        if not entries then
+            entries = safe(C_TaskQuest.GetQuestsForPlayerByMapID, mapID)
+        end
+
+        if type(entries) == "table" then
+            for i = 1, #entries do
+                local q   = entries[i]
+                local qid = q and (q.questID or q.questId) -- be lenient about field name
+
                 if qid and not seen[qid] then
                     seen[qid] = true
                     local t = makeTask(qid, mapID, true)
+
                     -- Hard filter: zone name must include one of the home patterns
                     local z = strlower(t.zone)
                     local ok = false
-                    for pat in pairs(zoneWhitelists) do if z:find(pat,1,true) then ok=true; break end end
-                    if ok then table.insert(tasks, t) end
+                    for pat in pairs(zoneWhitelists) do
+                        if z:find(pat, 1, true) then ok = true; break end
+                    end
+
+                    if ok then
+                        table.insert(tasks, t)
+                    end
                 end
             end
         end
     end
+
 
     table.sort(tasks, function(a,b)
         if a.zone == b.zone then return (a.name or "") < (b.name or "") end
