@@ -562,7 +562,11 @@ function UI.TrySkinElvUI(self, frame, close)
         if gp.save and S.HandleButton then S:HandleButton(gp.save) end
         if gp.clear and S.HandleButton then S:HandleButton(gp.clear) end
         if gp.renownSlider and S.HandleSliderFrame then S:HandleSliderFrame(gp.renownSlider) end
-        if gp.standingDrop and S.HandleDropDownBox then S:HandleDropDownBox(gp.standingDrop, 160) end
+        if gp.standingDrop and S.HandleDropDownBox then
+            S:HandleDropDownBox(gp.standingDrop, 160)
+            if _DD_Normalize then _DD_Normalize(gp.standingDrop, 160) end
+            if _DD_Lock      then _DD_Lock(gp.standingDrop,   160, 22) end
+        end
         if gp.scroll and gp.scroll.ScrollBar and S.HandleScrollBar then
             S:HandleScrollBar(gp.scroll.ScrollBar)
         end
@@ -646,7 +650,7 @@ function UI.ShowGoalPanel(self, row)
         gp.highText:SetPoint("TOPRIGHT", gp.renownSlider, "BOTTOMRIGHT", 0, -2)
 
         gp.standingDrop = CreateFrame("Frame", "P2E_TargetStanding", gp, "UIDropDownMenuTemplate")
-        gp.standingDrop:SetPoint("TOPLEFT", gp.targetLabel, "BOTTOMLEFT", -14, -6)
+        gp.standingDrop:SetPoint("TOPLEFT", gp.targetLabel, "BOTTOMLEFT", 0, -6)
         gp.standingDrop:Hide()
 
         gp.save = CreateFrame("Button", nil, gp, "UIPanelButtonTemplate")
@@ -728,6 +732,18 @@ function UI.ShowGoalPanel(self, row)
 
     local gp = parent._goalPanel
     gp:Show()
+    -- debounce helper for auto-save (renown)
+    gp._saveTimer = gp._saveTimer or nil
+    function gp:DebouncedSaveRenown(target)
+        if self._saveTimer then self._saveTimer:Cancel() end
+        self._saveTimer = C_Timer.NewTimer(0.30, function()
+            if self._row and self._row.factionID then
+                ns.UI._addonRef:SetGoal(self._row.factionID, { type="renown", targetRenown=target })
+                ns.UI.RefreshGoalTasks(ns.UI._addonRef)
+            end
+        end)
+    end
+
 
     gp._row = row
     gp._factionID = row.factionID
@@ -756,6 +772,9 @@ function UI.ShowGoalPanel(self, row)
         gp.renownSlider:SetScript("OnValueChanged", function(_, v)
             gp.renownValue:SetText(("%d"):format(v))
         end)
+        gp.save:Hide()
+        gp.clear:Hide()
+
         gp.renownValue:SetText(("%d"):format(s:GetValue()))
 
         -- force the Low/High labels to sit just under the slider
@@ -779,7 +798,7 @@ function UI.ShowGoalPanel(self, row)
 
         gp.curText:SetText(("Current: Renown %d / %d"):format(cur, cap))
     else
-        -- Faction (standing) UI  (uses a context-menu button instead of UIDropDown)
+        -- Faction (standing) UI — Blizzard dropdown, instant save/clear
         gp.renownSlider:Hide()
         gp.renownValue:SetText("")
         if gp.lowText then gp.lowText:Hide() end
@@ -787,48 +806,69 @@ function UI.ShowGoalPanel(self, row)
 
         gp.curText:SetText(("Current: %d / %d (Standing %s)"):format(row.current or 0, row.max or 0, tostring(row.standingID or "?")))
 
-        -- build/select button once
-        if not gp.standingBtn then
-            gp.standingBtn = CreateChoiceButton(gp, 160)
-            gp.standingBtn:SetPoint("TOPLEFT", gp.targetLabel, "BOTTOMLEFT", 0, -6)
-            gp.standingBtn:SetLabel("Select…")
-        end
-        gp.standingBtn:Show()
-        gp._targetStanding = nil
+        -- hide the old button, use dropdown
+        if gp.standingBtn then gp.standingBtn:Hide() end
+        gp.standingDrop:Show()
 
-        -- choices
-        local choices = {
-            { txt="Friendly", id=5 },
-            { txt="Honored",  id=6 },
-            { txt="Revered",  id=7 },
-            { txt="Exalted",  id=8 },
-        }
-
-        -- open modern context menu on click
-        gp.standingBtn:SetScript("OnClick", function(btn)
-            MenuUtil.CreateContextMenu(btn, function(_, root)
-                root:CreateTitle("Target Standing")
-                for _, c in ipairs(choices) do
-                    root:CreateCheckbox(c.txt, function() return gp._targetStanding == c.id end, function()
-                        gp._targetStanding = c.id
-                        gp.standingBtn:SetLabel(c.txt)
-                    end)
+        -- init dropdown once
+        if not gp._standingDDInit then
+            local function InitStandingDD(selfDD, level)
+                if level ~= 1 then return end
+                -- Clear option
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = "None"
+                info.func = function()
+                    gp._targetStanding = nil
+                    UIDropDownMenu_SetText(gp.standingDrop, "Select…")
+                    ns.UI._addonRef:ClearGoal(row.factionID)
+                    ns.UI.RefreshGoalTasks(ns.UI._addonRef)
                 end
-                root:CreateDivider()
-                root:CreateButton("Cancel")
-            end)
-        end)
+                info.checked = function() return gp._targetStanding == nil end
+                UIDropDownMenu_AddButton(info, level)
 
-        -- buttons under the selector
-        gp.save:ClearAllPoints()
-        gp.save:SetPoint("TOPLEFT", gp.standingBtn, "BOTTOMLEFT", 0, -10)
-        gp.clear:ClearAllPoints()
-        gp.clear:SetPoint("LEFT", gp.save, "RIGHT", 8, 0)
+                -- Choices
+                local choices = {
+                    { txt="Friendly", id=5 },
+                    { txt="Honored",  id=6 },
+                    { txt="Revered",  id=7 },
+                    { txt="Exalted",  id=8 },
+                }
+                for _, c in ipairs(choices) do
+                    local i2 = UIDropDownMenu_CreateInfo()
+                    i2.text = c.txt
+                    i2.func = function()
+                        gp._targetStanding = c.id
+                        UIDropDownMenu_SetText(gp.standingDrop, c.txt)
+                        ns.UI._addonRef:SetGoal(row.factionID, { type="faction", targetStandingID=c.id })
+                        ns.UI.RefreshGoalTasks(ns.UI._addonRef)
+                    end
+                    i2.checked = function() return gp._targetStanding == c.id end
+                    UIDropDownMenu_AddButton(i2, level)
+                end
+            end
+            if _G.UIDropDownMenu_SetInitializeFunction then
+                UIDropDownMenu_SetInitializeFunction(gp.standingDrop, InitStandingDD)
+            else
+                UIDropDownMenu_Initialize(gp.standingDrop, InitStandingDD)
+            end
+            UIDropDownMenu_SetWidth(gp.standingDrop, 160)
+            UIDropDownMenu_SetAnchor(gp.standingDrop, 0, 0, "TOPLEFT", gp.standingDrop, "BOTTOMLEFT")
+            if _DD_Normalize then _DD_Normalize(gp.standingDrop, 160) end
+            if _DD_Lock      then _DD_Lock(gp.standingDrop,   160, 22) end
+            gp._standingDDInit = true
+        end
 
+        UIDropDownMenu_SetText(gp.standingDrop, "Select…")
+
+        -- Hide Save/Clear; position the task header under the dropdown
+        gp.save:Hide()
+        gp.clear:Hide()
         gp.taskHeader:ClearAllPoints()
-        gp.taskHeader:SetPoint("TOPLEFT", gp.save, "BOTTOMLEFT", 0, -10)
-
+        gp.taskHeader:SetPoint("TOPLEFT", gp.standingDrop, "BOTTOMLEFT", 14, -12)
     end
+
+
+
 
 
     gp.save:SetScript("OnClick", function()
@@ -860,18 +900,16 @@ function UI.RefreshGoalTasks(self)
     if row.type == "renown" then
         if goal and goal.targetRenown then gp.renownSlider:SetValue(goal.targetRenown) end
     else
+        local map = { [5]="Friendly", [6]="Honored", [7]="Revered", [8]="Exalted" }
+        local txt = "Select…"
         if goal and goal.targetStandingID then
-            local map = { [5]="Friendly", [6]="Honored", [7]="Revered", [8]="Exalted" }
-            if self.MainWindow and self.MainWindow._goalPanel and self.MainWindow._goalPanel.standingBtn then
-                self.MainWindow._goalPanel.standingBtn:SetLabel(map[goal.targetStandingID] or "Select…")
-            end
-            local gp = self.MainWindow._goalPanel
+            txt = map[goal.targetStandingID] or txt
             gp._targetStanding = goal.targetStandingID
         else
-            if self.MainWindow and self.MainWindow._goalPanel and self.MainWindow._goalPanel.standingBtn then
-                self.MainWindow._goalPanel.standingBtn:SetLabel("Select…")
-            end
+            gp._targetStanding = nil
         end
+        if gp.standingDrop then UIDropDownMenu_SetText(gp.standingDrop, txt) end
+        if gp.standingBtn  then gp.standingBtn:SetLabel(txt) end  -- safe if it still exists
     end
 
     local tasks, completed = ns.Goals.GenerateTasks(self.db, row)
