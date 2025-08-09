@@ -61,6 +61,23 @@ local function SafeFontTemplate(fs, E)
     end
 end
 
+-- Ensure dropdown popups appear above our panels
+hooksecurefunc("ToggleDropDownMenu", function(level)
+    local list = _G["DropDownList"..(level or 1)]
+    if list and list:IsShown() then list:SetFrameStrata("DIALOG") end
+end)
+
+-- simple "fake dropdown" using MenuUtil (Retail-safe)
+local function CreateChoiceButton(parent, width)
+    local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    btn:SetSize(width or 160, 22)
+    btn._label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    btn._label:SetPoint("CENTER")
+    btn.SetLabel = function(self, txt) self._label:SetText(txt) end
+    btn.GetLabel = function(self) return self._label:GetText() end
+    return btn
+end
+
 
 -- public: build window
 function UI.CreateMainWindow(self)  -- self is the AceAddon
@@ -257,39 +274,75 @@ function UI.InitDropdowns(self)
     local f = self.MainWindow; if not f then return end
     local filters = self.db.profile.filters
 
-    UIDropDownMenu_Initialize(f.filters.typeDrop, function(_, level)
+    -- helper: works on Retail 11.x and Classic
+    local function ConfigureDD(dd, initFn)
+        if dd._p2eConfigured then return end
+        -- prefer the newer setter if present
+        if _G.UIDropDownMenu_SetInitializeFunction then
+            UIDropDownMenu_SetInitializeFunction(dd, initFn)
+        else
+            UIDropDownMenu_Initialize(dd, initFn)
+        end
+        -- show the list under the dropdown
+        UIDropDownMenu_SetAnchor(dd, 0, 0, "TOPLEFT", dd, "BOTTOMLEFT")
+        dd._p2eConfigured = true
+    end
+
+    -- TYPE
+    ConfigureDD(f.filters.typeDrop, function(selfDD, level)
         if level ~= 1 then return end
         for _, v in ipairs({ "All", "faction", "renown" }) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = v
-            info.func = function() filters.type = v; _DD_SetText(f.filters.typeDrop, v); self:RefreshView() end
+            info.func = function()
+                filters.type = v
+                _DD_SetText(f.filters.typeDrop, v)
+                self:RefreshView()
+            end
             info.checked = (filters.type == v)
             UIDropDownMenu_AddButton(info, level)
         end
-    end); _DD_SetText(f.filters.typeDrop, filters.type or "All")
+    end)
+    UIDropDownMenu_SetWidth(f.filters.typeDrop, 120)
+    _DD_SetText(f.filters.typeDrop, filters.type or "All")
 
-    UIDropDownMenu_Initialize(f.filters.statusDrop, function(_, level)
+    -- STATUS
+    ConfigureDD(f.filters.statusDrop, function(selfDD, level)
         if level ~= 1 then return end
         for _, v in ipairs({ "All", "In-Progress", "Maxed" }) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = v
-            info.func = function() filters.status = v; _DD_SetText(f.filters.statusDrop, v); self:RefreshView() end
+            info.func = function()
+                filters.status = v
+                _DD_SetText(f.filters.statusDrop, v)
+                self:RefreshView()
+            end
             info.checked = (filters.status == v)
             UIDropDownMenu_AddButton(info, level)
         end
-    end); _DD_SetText(f.filters.statusDrop, filters.status or "All")
+    end)
+    UIDropDownMenu_SetWidth(f.filters.statusDrop, 140)
+    _DD_SetText(f.filters.statusDrop, filters.status or "All")
 
-    UIDropDownMenu_Initialize(f.filters.sortDrop, function(_, level)
+    -- SORT
+    ConfigureDD(f.filters.sortDrop, function(selfDD, level)
         if level ~= 1 then return end
         for _, v in ipairs({ "Progress", "Name" }) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = v
-            info.func = function() filters.sort = v; _DD_SetText(f.filters.sortDrop, v); self:RefreshView() end
+            info.func = function()
+                filters.sort = v
+                _DD_SetText(f.filters.sortDrop, v)
+                self:RefreshView()
+            end
             info.checked = (filters.sort == v)
             UIDropDownMenu_AddButton(info, level)
         end
-    end); _DD_SetText(f.filters.sortDrop, filters.sort or "Progress")
+    end)
+    UIDropDownMenu_SetWidth(f.filters.sortDrop, 140)
+    _DD_SetText(f.filters.sortDrop, filters.sort or "Progress")
 end
+
 
 function UI.RefreshRows(self)
     if not self.MainWindow then return end
@@ -562,6 +615,10 @@ function UI.ShowGoalPanel(self, row)
         for i=1, 8 do gp.rows[i] = NewTaskRow(i) end
 
         self:TrySkinElvUI(gp, close)
+        if AddOnLoaded("ElvUI") and ElvUI and gp.standingBtn then
+            local E = unpack(ElvUI); local S = E and E:GetModule("Skins", true)
+            if S and S.HandleButton then S:HandleButton(gp.standingBtn) end
+        end
         parent._goalPanel = gp
     end
 
@@ -618,20 +675,24 @@ function UI.ShowGoalPanel(self, row)
 
         gp.curText:SetText(("Current: Renown %d / %d"):format(cur, cap))
     else
-        -- Faction (standing) UI
+        -- Faction (standing) UI  (uses a context-menu button instead of UIDropDown)
         gp.renownSlider:Hide()
         gp.renownValue:SetText("")
         if gp.lowText then gp.lowText:Hide() end
         if gp.highText then gp.highText:Hide() end
 
-        gp.standingDrop:Show()
         gp.curText:SetText(("Current: %d / %d (Standing %s)"):format(row.current or 0, row.max or 0, tostring(row.standingID or "?")))
 
-        -- keep the dropdown above nearby text/buttons
-        gp.standingDrop:SetFrameLevel(gp:GetFrameLevel() + 20)
-        UIDropDownMenu_SetWidth(gp.standingDrop, 160)
+        -- build/select button once
+        if not gp.standingBtn then
+            gp.standingBtn = CreateChoiceButton(gp, 160)
+            gp.standingBtn:SetPoint("TOPLEFT", gp.targetLabel, "BOTTOMLEFT", 0, -6)
+            gp.standingBtn:SetLabel("Select…")
+        end
+        gp.standingBtn:Show()
+        gp._targetStanding = nil
 
-        -- define the menu choices (this went missing)
+        -- choices
         local choices = {
             { txt="Friendly", id=5 },
             { txt="Honored",  id=6 },
@@ -639,25 +700,24 @@ function UI.ShowGoalPanel(self, row)
             { txt="Exalted",  id=8 },
         }
 
-        UIDropDownMenu_Initialize(gp.standingDrop, function(_, level)
-            if level ~= 1 then return end
-            for _, c in ipairs(choices) do
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = c.txt
-                info.func = function()
-                    gp._targetStanding = c.id
-                    local fs = _G[gp.standingDrop:GetName().."Text"]; if fs then fs:SetText(c.txt) end
+        -- open modern context menu on click
+        gp.standingBtn:SetScript("OnClick", function(btn)
+            MenuUtil.CreateContextMenu(btn, function(_, root)
+                root:CreateTitle("Target Standing")
+                for _, c in ipairs(choices) do
+                    root:CreateCheckbox(c.txt, function() return gp._targetStanding == c.id end, function()
+                        gp._targetStanding = c.id
+                        gp.standingBtn:SetLabel(c.txt)
+                    end)
                 end
-                info.checked = (gp._targetStanding == c.id)
-                UIDropDownMenu_AddButton(info, level)
-            end
+                root:CreateDivider()
+                root:CreateButton("Cancel")
+            end)
         end)
-        local fs = _G[gp.standingDrop:GetName().."Text"]; if fs then fs:SetText("Select…") end
-        gp._targetStanding = nil
 
-        -- buttons under the dropdown
+        -- buttons under the selector
         gp.save:ClearAllPoints()
-        gp.save:SetPoint("TOPLEFT", gp.standingDrop, "BOTTOMLEFT", 14, -10)
+        gp.save:SetPoint("TOPLEFT", gp.standingBtn, "BOTTOMLEFT", 0, -10)
         gp.clear:ClearAllPoints()
         gp.clear:SetPoint("LEFT", gp.save, "RIGHT", 8, 0)
 
@@ -698,8 +758,15 @@ function UI.RefreshGoalTasks(self)
     else
         if goal and goal.targetStandingID then
             local map = { [5]="Friendly", [6]="Honored", [7]="Revered", [8]="Exalted" }
-            local fs = _G[gp.standingDrop:GetName().."Text"]; if fs then fs:SetText(map[goal.targetStandingID] or "Select…") end
+            if self.MainWindow and self.MainWindow._goalPanel and self.MainWindow._goalPanel.standingBtn then
+                self.MainWindow._goalPanel.standingBtn:SetLabel(map[goal.targetStandingID] or "Select…")
+            end
+            local gp = self.MainWindow._goalPanel
             gp._targetStanding = goal.targetStandingID
+        else
+            if self.MainWindow and self.MainWindow._goalPanel and self.MainWindow._goalPanel.standingBtn then
+                self.MainWindow._goalPanel.standingBtn:SetLabel("Select…")
+            end
         end
     end
 
