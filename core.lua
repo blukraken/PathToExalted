@@ -19,7 +19,10 @@ local defaults = {
         debug   = false,
         filters = { type="All", status="All", sort="Progress" },
     },
-    global = { reputations = {} },
+    global = { reputations = {},
+               goals = {}, -- map[factionID] = { type="faction", targetStandingID=6 } or { type="renown", targetRenown=20 }
+               completedActivities = {}, -- map[factionID][activityKey] = lastCompletedEpoch
+    },
 }
 
 -- debug helper
@@ -49,6 +52,12 @@ function P2E:OnInitialize()
     self.InitDropdowns    = function(_) ns.UI.InitDropdowns(self) end
     self.RefreshRows      = function(_) ns.UI.RefreshRows(self) end
     self.TrySkinElvUI     = function(_, frame, close) ns.UI.TrySkinElvUI(self, frame, close) end
+    self.ShowGoalPanel    = function(_, rowData) ns.UI.ShowGoalPanel(self, rowData) end
+
+    -- Goals wiring (helpers for other modules/UI)
+    self.GetGoal          = function(_, factionID) return (ns.Goals and ns.Goals.Get(self.db, factionID)) end
+    self.SetGoal          = function(_, factionID, goal) ns.Goals.Set(self.db, factionID, goal) end
+    self.ClearGoal        = function(_, factionID) ns.Goals.Clear(self.db, factionID) end
 
     -- LDB / Minimap
     if LDB then

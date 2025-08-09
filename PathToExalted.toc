@@ -9,5 +9,6 @@
 embeds.xml
 
 reputation.lua
+goals.lua
 ui.lua
 core.lua
