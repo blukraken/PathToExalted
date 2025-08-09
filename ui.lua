@@ -1,4 +1,3 @@
--- ui.lua
 -- Frames, dropdowns, painting, skinning
 local ADDON_NAME, ns = ...
 ns.UI = ns.UI or {}
@@ -12,6 +11,77 @@ local COLW_NAME, COLW_TYPE, COLW_LEVEL, COLW_PROG, COLW_EXTRA = 230, 70, 110, 80
 local function _DD_SetText(drop, text)
     local fs = _G[drop:GetName().."Text"]
     if fs then fs:SetText(text) end
+end
+
+local function _DD_Normalize(dd, width)
+    if not dd or not dd.GetName then return end
+    UIDropDownMenu_SetWidth(dd, width or 140)
+    dd:SetHeight(22)
+
+    local name  = dd:GetName()
+    local btn   = _G[name.."Button"]
+    local text  = _G[name.."Text"]
+    local icon  = _G[name.."Icon"]
+
+    if btn then
+        btn:ClearAllPoints()
+        btn:SetAllPoints(dd)
+        btn:SetHitRectInsets(0, 0, 0, 0)
+    end
+    if text then
+        text:ClearAllPoints()
+        text:SetPoint("LEFT", dd, "LEFT", 12, 0)
+        text:SetPoint("RIGHT", dd, "RIGHT", -24, 0)
+        text:SetJustifyH("LEFT")
+    end
+    if icon then
+        icon:ClearAllPoints()
+        icon:SetPoint("RIGHT", dd, "RIGHT", -8, 0)
+    end
+end
+
+local function _DD_Lock(dd, width, height)
+    if not dd or not dd.GetName then return end
+    width  = width  or 140
+    height = height or 22
+
+    UIDropDownMenu_SetWidth(dd, width)
+    dd:SetHeight(height)
+
+    local name = dd:GetName()
+    local btn  = _G[name.."Button"]
+    local text = _G[name.."Text"]
+    local icon = _G[name.."Icon"]
+
+    if btn then
+        btn:ClearAllPoints()
+        btn:SetPoint("TOPLEFT", dd, "TOPLEFT", 0, 0)
+        btn:SetPoint("BOTTOMRIGHT", dd, "BOTTOMRIGHT", 0, 0)
+        btn:SetHitRectInsets(0,0,0,0)
+        btn:SetHeight(height)
+    end
+    if text then
+        text:ClearAllPoints()
+        text:SetPoint("LEFT", dd, "LEFT", 12, 0)
+        text:SetPoint("RIGHT", dd, "RIGHT", -24, 0)
+        text:SetJustifyH("LEFT")
+    end
+    if icon then
+        icon:ClearAllPoints()
+        icon:SetPoint("RIGHT", dd, "RIGHT", -8, 0)
+    end
+    if dd.backdrop and dd.backdrop.SetAllPoints then
+        dd.backdrop:SetAllPoints(dd)
+    end
+
+    -- If any skin tries to resize later, snap back
+    dd:HookScript("OnSizeChanged", function(self)
+        self:SetHeight(height)
+        if self.backdrop and self.backdrop.SetAllPoints then
+            self.backdrop:SetAllPoints(self)
+        end
+        if btn then btn:SetHeight(height) end
+    end)
 end
 
 -- ElvUI / AddOn helpers (11.x safe)
@@ -123,7 +193,7 @@ function UI.CreateMainWindow(self)  -- self is the AceAddon
     local filters = CreateFrame("Frame", nil, f)
     filters:SetPoint("TOPLEFT", 12, -40)
     filters:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -40)
-    filters:SetHeight(56)
+    filters:SetHeight(60)
 
     local function NewLabel(parent, text)
         local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -137,11 +207,13 @@ function UI.CreateMainWindow(self)  -- self is the AceAddon
 
     local typeLabel = NewLabel(row1, "Type:"); typeLabel:SetPoint("LEFT", row1, "LEFT", 0, 0)
     local typeDrop = CreateFrame("Frame", "P2E_TypeDropdown", row1, "UIDropDownMenuTemplate")
-    typeDrop:SetPoint("LEFT", typeLabel, "RIGHT", -6, -4); UIDropDownMenu_SetWidth(typeDrop, 120)
+    typeDrop:SetPoint("LEFT", typeLabel, "RIGHT", 2, -2); UIDropDownMenu_SetWidth(typeDrop, 120)
+    _DD_Normalize(typeDrop, 120) _DD_Lock(typeDrop, 120, 22)
 
-    local statusLabel = NewLabel(row1, "Status:"); statusLabel:SetPoint("LEFT", typeDrop, "RIGHT", 20, 4)
+    local statusLabel = NewLabel(row1, "Status:"); statusLabel:SetPoint("LEFT", typeDrop, "RIGHT", 20, 0)
     local statusDrop = CreateFrame("Frame", "P2E_StatusDropdown", row1, "UIDropDownMenuTemplate")
-    statusDrop:SetPoint("LEFT", statusLabel, "RIGHT", -6, -4); UIDropDownMenu_SetWidth(statusDrop, 140)
+    statusDrop:SetPoint("LEFT", statusLabel, "RIGHT", 2, -2); UIDropDownMenu_SetWidth(statusDrop, 140)
+    _DD_Normalize(statusDrop, 140) _DD_Lock(statusDrop, 140, 22)
 
     local row2 = CreateFrame("Frame", nil, filters); row2:SetHeight(26)
     row2:SetPoint("TOPLEFT", row1, "BOTTOMLEFT", 0, -4)
@@ -149,15 +221,26 @@ function UI.CreateMainWindow(self)  -- self is the AceAddon
 
     local sortLabel = NewLabel(row2, "Sort:"); sortLabel:SetPoint("LEFT", row2, "LEFT", 0, 0)
     local sortDrop = CreateFrame("Frame", "P2E_SortDropdown", row2, "UIDropDownMenuTemplate")
-    sortDrop:SetPoint("LEFT", sortLabel, "RIGHT", -6, -4); UIDropDownMenu_SetWidth(sortDrop, 140)
+    sortDrop:SetPoint("LEFT", sortLabel, "RIGHT", 2, -2); UIDropDownMenu_SetWidth(sortDrop, 140)
+    _DD_Normalize(sortDrop, 140) _DD_Lock(sortDrop, 140, 22)
 
     f.filters = { typeDrop = typeDrop, statusDrop = statusDrop, sortDrop = sortDrop }
 
+    -- Ensure filters sit above the header so clicks aren't eaten
+    filters:SetFrameLevel(f:GetFrameLevel() + 5)
+    row1:SetFrameLevel(filters:GetFrameLevel() + 1)
+    row2:SetFrameLevel(filters:GetFrameLevel() + 1)
+    typeDrop:SetFrameLevel(filters:GetFrameLevel() + 2)
+    statusDrop:SetFrameLevel(filters:GetFrameLevel() + 2)
+    sortDrop:SetFrameLevel(filters:GetFrameLevel() + 2)
+
     -- header
     local header = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    header:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -6)
+    header:SetPoint("TOPLEFT", filters, "BOTTOMLEFT", 0, -10)
     header:SetPoint("RIGHT", f, "RIGHT", -12, 0)
     header:SetHeight(22)
+    header:EnableMouse(false)
+    header:SetFrameStrata("BACKGROUND")
     header:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -415,8 +498,29 @@ function UI.TrySkinElvUI(self, frame, close)
         -- Filters (dropdowns)
         if f.filters and S.HandleDropDownBox then
             S:HandleDropDownBox(f.filters.typeDrop,   140)
+            _DD_Normalize(f.filters.typeDrop, 140)
+            _DD_Lock(f.filters.typeDrop, 120, 22)
             S:HandleDropDownBox(f.filters.statusDrop, 140)
+            _DD_Normalize(f.filters.statusDrop, 140)
+            _DD_Lock(f.filters.statusDrop, 140, 22)
             S:HandleDropDownBox(f.filters.sortDrop,   140)
+            _DD_Normalize(f.filters.sortDrop, 140)
+            _DD_Lock(f.filters.sortDrop, 140, 22)
+
+            -- Ensure dropdown text does not overlap the arrow button
+            local function FixDropdownTextPadding(dd)
+                if not dd or not dd.GetName then return end
+                local textRegion = _G[dd:GetName().."Text"]
+                if not textRegion then return end
+                textRegion:ClearAllPoints()
+                -- Left padding for the icon/left cap, right padding to leave room for arrow
+                textRegion:SetPoint("LEFT", dd, "LEFT", 20, 0)
+                textRegion:SetPoint("RIGHT", dd, "RIGHT", -22, 0)
+                textRegion:SetJustifyH("LEFT")
+            end
+            FixDropdownTextPadding(f.filters.typeDrop)
+            FixDropdownTextPadding(f.filters.statusDrop)
+            FixDropdownTextPadding(f.filters.sortDrop)
         end
 
         -- Header fonts only (we don't want a box here)
@@ -836,4 +940,3 @@ function UI.ShowRowContextMenu(self, rowData)
         end
     end
 end
-
