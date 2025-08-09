@@ -42,9 +42,12 @@ function Data.ScanAll(db, dprint)
     local guid = UnitGUID("player") or "unknown"
 
     if Data.HasRetailRepAPIs() then
+        -- Build a set of major-faction IDs so we can skip them in the C_Reputation iteration.
+        local majorSet = {}
         local ids = C_MajorFactions.GetMajorFactionIDs and C_MajorFactions.GetMajorFactionIDs()
         if ids then
             for _, id in ipairs(ids) do
+                majorSet[id] = true
                 local info = C_MajorFactions.GetMajorFactionData and C_MajorFactions.GetMajorFactionData(id)
                 if info then
                     table.insert(out, {
@@ -58,21 +61,26 @@ function Data.ScanAll(db, dprint)
                 end
             end
         end
+
         if C_Reputation.GetNumFactions and C_Reputation.GetFactionDataByIndex then
             local n = C_Reputation.GetNumFactions()
             for i = 1, n do
                 local finfo = C_Reputation.GetFactionDataByIndex(i)
                 if finfo and not finfo.isHeader then
-                    table.insert(out, {
-                        type = "faction",
-                        name = finfo.name,
-                        factionID = finfo.factionID,
-                        current = finfo.currentStanding or 0,
-                        max     = finfo.maxStanding or 42000,
-                        standingID = finfo.standingID,
-                        isWarband  = false,
-                        characterGUID = guid,
-                    })
+                    -- Skip anything flagged as a major faction or known major ID to avoid
+                    -- classifying renown factions as normal “faction” rows.
+                    if not finfo.isMajorFaction and not majorSet[finfo.factionID] then
+                        table.insert(out, {
+                            type = "faction",
+                            name = finfo.name,
+                            factionID = finfo.factionID,
+                            current = finfo.currentStanding or 0,
+                            max     = finfo.maxStanding or 42000,
+                            standingID = finfo.standingID,
+                            isWarband  = false,
+                            characterGUID = guid,
+                        })
+                    end
                 end
             end
         end
