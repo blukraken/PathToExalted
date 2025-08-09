@@ -1,0 +1,63 @@
+Development Plan: Path to Exalted
+The goal of this addon is to provide a comprehensive, Warband-focused tool for tracking reputation and renown progress. This plan outlines a phased "order of operations" for development, with each phase building upon the previous one.
+________________________________________
+Phase 1: Core Data Collection and UI Design
+Objective: Develop the foundational database and a user-friendly interface.
+1.	Comprehensive Data Structure: Create a data structure to track all reputations and renown levels across an account (Warband-wide). This structure will include:
+○	Faction Name
+○	Current Reputation Value & Max Reputation Value
+○	Current Renown Level & Max Renown Level
+○	A flag for Warband-wide or character-specific reputation
+○	A unique identifier for each character on the account.
+2.	Main Addon Window: Design and implement a primary user interface window. This UI will display a scrollable list of all reputations, showing current levels with an intuitive progress bar and clear numeric values.
+3.	User-Driven Filtering and Sorting: Add a control panel to the main window with filters for:
+○	Expansion: (Dragonflight, Shadowlands, etc.)
+○	Type: (faction, renown)
+○	Status: (maxed, in-progress)
+○	Sorting: (by progress, name, or zone)
+________________________________________
+Phase 2: Goal-Setting and Dynamic Task Generation
+Objective: Enable users to set reputation goals and receive a dynamic list of tasks.
+1.	Target-Level Selection: Add functionality for the user to select a specific reputation from the main list and set a target level (e.g., "Exalted" or "Renown 20") using a simple selector.
+2.	Intelligent Task Generation: Based on the user's goal, the addon will generate a real-time, prioritized list of in-game activities (quests, world quests, etc.) that grant reputation for that faction. This list will clearly display the amount of reputation awarded per activity.
+3.	Warband-Aware Activity Tracking: The task list will dynamically update to show which activities are available to which character on the account.
+________________________________________
+Phase 3: Vendor Rewards and Item Preview
+Objective: Integrate a detailed vendor rewards browser to showcase what the user can earn.
+1.	Vendor Data Collection: Compile a database of all reputation and renown vendors, including their location, the items they sell, and the reputation level/renown rank required for each item.
+2.	Interactive Reward Preview Window: Create a sub-window that opens when a reputation is selected. This window will have three viewing modes:
+○	Available Now: Items the user can currently purchase.
+○	Goal Rewards: Items that will become available upon reaching the set target level.
+○	All Rewards: A complete list of all items from the vendor.
+3.	Item Preview Functionality: Implement the ability to preview rewards directly. Gear will be previewed in the standard WoW Dressing Room, while mounts and pets will have a dedicated 3D model viewer.
+________________________________________
+Phase 4: Time-to-Completion Estimation
+Objective: Provide the user with a clear estimate of the time required to reach their goal.
+1.	Estimation Algorithm: Create an algorithm that calculates the total time required to reach the user's set goal, considering:
+○	Total reputation points needed.
+○	Reputation gain from all available activities.
+○	Average completion time per activity.
+○	Daily and weekly reset schedules.
+2.	User-Facing Time Display: Display this estimated time prominently in the main UI, alongside the user's goal (e.g., "Approximately 3 days and 5 hours").
+3.	Dynamic Recalculation: The estimation will automatically update as the user completes activities, providing a more accurate time estimate in real-time.
+________________________________________
+Phase 5: Advanced Warband and Efficiency Integration
+Objective: Incorporate advanced multi-character features to optimize reputation grinding.
+1.	Cross-Character Activity Tracking: Implement a system to track which reputation-granting activities have been completed for the day or week across the entire Warband.
+2.	Smart Task List Updating: Modify the task list so that once an activity is completed by one character, it's marked as complete for all others in the Warband for that reset period.
+3.	Multi-Character Optimization Mode: Develop a mode that advises the user on the most efficient character to use for specific tasks. The addon will not suggest tasks that have already been completed by another character on the account.
+________________________________________
+Phase 6: Finalization and Quality of Life
+Objective: Add polish and key user experience improvements.
+1.	"Bonus Rep" Pop-up Tracker: Integrate a small, non-intrusive pop-up that notifies the user of temporary reputation buffs (e.g., Darkmoon Faire).
+2.	World Map Integration: Add a visual pathing feature to the world map, showing the most efficient route for completing a batch of reputation activities.
+3.	Manual Progress Tracking: Add a checkbox next to each task on the list, allowing the user to manually track their progress.
+4.	Customizable Settings Menu: Create a settings menu for users to customize UI appearance and notification preferences.
+________________________________________
+Phase 7: User Experience (UX) and Workflow
+Objective: Define the core interaction loop for the user, from initial engagement to daily use.
+1.	Initial Engagement: The user opens the addon's main window via a minimap icon or command. They are presented with a comprehensive list of all reputations, sorted by a customizable default setting.
+2.	Goal Setting: The user clicks on a reputation to open a detailed sub-pane. Here, they can input a target level, instantly see an estimated time-to-completion, and view a dynamic task list.
+3.	Navigating Rewards: From the detailed faction pane, the user can click a "View Rewards" button to open the rewards browser. This browser allows them to switch between "Available Now," "Goal Rewards," and "All Rewards" views.
+4.	Daily Use and Tracking: After setting a goal, the user interacts with passive features like the "Bonus Rep" pop-up. They can open the main window to check progress and mark tasks complete. The map integration will help them plan efficient routes.
+5.	Closing the Addon: The user can close any window via a standard button. The addon automatically saves their settings and goals for a seamless return.
