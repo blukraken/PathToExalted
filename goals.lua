@@ -162,17 +162,28 @@ local function collectWQTasksStrict(row)
 
                 if qid and not seen[qid] then
                     seen[qid] = true
-                    local t = makeTask(qid, mapID, true)
 
-                    -- Hard filter: zone name must include one of the home patterns
-                    local z = strlower(t.zone)
-                    local ok = false
-                    for pat in pairs(zoneWhitelists) do
-                        if z:find(pat, 1, true) then ok = true; break end
-                    end
+                    -- Only include quests that are currently active for the player.
+                    -- Some APIs (like GetQuestsForPlayerByMapID) return every quest
+                    -- that could appear on the map, so we need to explicitly check
+                    -- for active status/time left.
+                    local isActive  = safe(C_TaskQuest.IsActive, qid)
+                    local timeLeft  = safe(C_TaskQuest.GetQuestTimeLeftMinutes, qid)
+                    local active = (isActive == nil or isActive) and (not timeLeft or timeLeft > 0)
 
-                    if ok then
-                        table.insert(tasks, t)
+                    if active then
+                        local t = makeTask(qid, mapID, true)
+
+                        -- Hard filter: zone name must include one of the home patterns
+                        local z = strlower(t.zone)
+                        local ok = false
+                        for pat in pairs(zoneWhitelists) do
+                            if z:find(pat, 1, true) then ok = true; break end
+                        end
+
+                        if ok then
+                            table.insert(tasks, t)
+                        end
                     end
                 end
             end
